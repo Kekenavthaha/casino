@@ -501,6 +501,9 @@
   (function(){
     "use strict";
 
+    // ---------- БАЗОВЫЙ URL API ----------
+    const API_BASE = 'https://baldandhappy.pythonanywhere.com';  // ← твой рабочий домен
+
     // ---------- ИНИЦИАЛИЗАЦИЯ TELEGRAM WEBAPP ----------
     const tg = window.Telegram.WebApp;
     tg.ready();
@@ -509,7 +512,7 @@
     let currentBalance = 0;
     let userId = null;
 
-    // Функция вызова API
+    // Функция вызова API (теперь с полным URL)
     async function apiCall(endpoint, data = {}) {
       const initData = tg.initData;
       if (!initData) {
@@ -517,7 +520,7 @@
         return null;
       }
       try {
-        const response = await fetch(endpoint, {
+        const response = await fetch(API_BASE + endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ...data, initData: initData })
@@ -601,7 +604,6 @@
       let spins = 0;
       const maxSpins = 12;
       const interval = setInterval(async () => {
-        // случайные символы для анимации
         const syms = ['🦀','💎','🍒','7','🔔','🍋'];
         slotReels.forEach(reel => reel.textContent = syms[Math.floor(Math.random()*syms.length)]);
         spins++;
@@ -698,7 +700,6 @@
       void wheelSpinner.offsetWidth;
       wheelSpinner.classList.add('spinning');
 
-      // Отправляем ставку
       const extra = { bet_type: selectedRouletteBet.type };
       if (selectedRouletteBet.value !== undefined) extra.bet_value = selectedRouletteBet.value;
 
