@@ -290,7 +290,7 @@
     }
 
     .dice {
-      background: #1a1a1a; /* черный фон */
+      background: #1a1a1a;
       width: 100px;
       height: 100px;
       border-radius: 24px;
@@ -300,7 +300,7 @@
       font-size: 68px;
       box-shadow: inset 0 -8px 0 #333, 0 12px 0 #0a0a0a, 0 8px 15px black;
       border: 3px solid #e6bc73;
-      color: white; /* точки белые */
+      color: white;
     }
 
     .dice-sum-selector {
@@ -426,7 +426,7 @@
     </div>
     <div class="balance-panel">
       <div class="balance-label">БАЛАНС</div>
-      <div class="balance-value" id="balanceDisplay">12,450</div>
+      <div class="balance-value" id="balanceDisplay">0</div>
     </div>
   </div>
 
@@ -496,15 +496,71 @@
   <footer>🦀 Партия одобряет ответственный азарт</footer>
 </div>
 
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script>
   (function(){
     "use strict";
 
-    // ---------- ДЕМО БАЛАНС ----------
-    let balance = 12450;
-    const balanceEl = document.getElementById('balanceDisplay');
+    // ---------- ИНИЦИАЛИЗАЦИЯ TELEGRAM WEBAPP ----------
+    const tg = window.Telegram.WebApp;
+    tg.ready();
+    tg.expand();
+
+    let currentBalance = 0;
+    let userId = null;
+
+    // Функция вызова API
+    async function apiCall(endpoint, data = {}) {
+      const initData = tg.initData;
+      if (!initData) {
+        alert("Ошибка: запустите приложение из Telegram!");
+        return null;
+      }
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...data, initData: initData })
+        });
+        if (!response.ok) {
+          const err = await response.json();
+          alert(`Ошибка: ${err.detail}`);
+          return null;
+        }
+        return await response.json();
+      } catch(e) {
+        alert("Ошибка соединения с сервером");
+        return null;
+      }
+    }
+
     function updateBalanceUI() {
-      balanceEl.textContent = balance.toLocaleString();
+      document.getElementById('balanceDisplay').innerText = currentBalance.toLocaleString();
+    }
+
+    async function initCasino() {
+      const data = await apiCall('/api/casino/init');
+      if (data) {
+        currentBalance = data.balance;
+        userId = data.user_id;
+        updateBalanceUI();
+      } else {
+        document.getElementById('balanceDisplay').innerText = 'Ошибка';
+      }
+    }
+
+    async function placeBet(game, betAmount, extraData) {
+      const data = await apiCall('/api/casino/bet', {
+        game: game,
+        bet: betAmount,
+        data: extraData
+      });
+      if (data) {
+        currentBalance = data.new_balance;
+        updateBalanceUI();
+        return data;
+      }
+      return null;
     }
 
     // ---------- ТАБЫ ----------
@@ -524,96 +580,54 @@
       });
     });
 
-    // ---------- СЛОТЫ (РЕАЛИСТИЧНЫЕ ШАНСЫ) ----------
-    const symbols = ['🦀', '💎', '🍒', '7', '🔔', '🍋'];
-    // Веса для каждого символа (чем больше вес, тем чаще выпадает)
-    const weights = {
-      '🦀': 8,
-      '💎': 10,
-      '🍒': 35,
-      '7': 12,
-      '🔔': 20,
-      '🍋': 15
-    };
-    // Создаём массив с учётом весов для быстрого выбора
-    const weightedSymbols = [];
-    for (const [sym, w] of Object.entries(weights)) {
-      for (let i = 0; i < w; i++) weightedSymbols.push(sym);
-    }
-
-    function getRandomWeightedSymbol() {
-      return weightedSymbols[Math.floor(Math.random() * weightedSymbols.length)];
-    }
-
+    // ---------- СЛОТЫ (ИНТЕГРАЦИЯ С API) ----------
     const slotReels = [document.getElementById('reel1'), document.getElementById('reel2'), document.getElementById('reel3')];
     const spinBtn = document.getElementById('spinSlots');
     const slotsBetInput = document.getElementById('slotsBet');
     const slotsResult = document.getElementById('slotsResult');
     const slotsContainer = document.querySelector('.slot-machine');
 
-    spinBtn.addEventListener('click', function() {
+    spinBtn.addEventListener('click', async function() {
       let bet = parseInt(slotsBetInput.value);
       if (isNaN(bet) || bet < 1) bet = 10;
-      if (bet > balance) {
+      if (bet > currentBalance) {
         slotsResult.innerHTML = '<span class="lose-glow">❌ Недостаточно кредитов!</span>';
         return;
       }
-
-      balance -= bet;
-      updateBalanceUI();
 
       // Анимация
       slotsContainer.classList.add('spin-animation');
       spinBtn.disabled = true;
       let spins = 0;
-      const maxSpins = 15;
-      const interval = setInterval(() => {
-        slotReels.forEach(reel => reel.textContent = getRandomWeightedSymbol());
+      const maxSpins = 12;
+      const interval = setInterval(async () => {
+        // случайные символы для анимации
+        const syms = ['🦀','💎','🍒','7','🔔','🍋'];
+        slotReels.forEach(reel => reel.textContent = syms[Math.floor(Math.random()*syms.length)]);
         spins++;
         if (spins >= maxSpins) {
           clearInterval(interval);
           slotsContainer.classList.remove('spin-animation');
-          // Финальные символы (взвешенные)
-          const finalSymbols = [
-            getRandomWeightedSymbol(),
-            getRandomWeightedSymbol(),
-            getRandomWeightedSymbol()
-          ];
-          slotReels.forEach((reel, i) => reel.textContent = finalSymbols[i]);
-
-          // Определение выигрыша (очень низкие шансы)
-          let win = 0;
-          const s = finalSymbols;
-          if (s[0] === s[1] && s[1] === s[2]) {
-            // Три одинаковых
-            if (s[0] === '🦀') win = bet * 50;      // куш!
-            else if (s[0] === '💎') win = bet * 25;
-            else if (s[0] === '7') win = bet * 15;
-            else win = bet * 5;
-          } else if (s[0] === s[1] || s[1] === s[2] || s[0] === s[2]) {
-            // Два одинаковых (редко)
-            if (Math.random() < 0.3) { // ещё снижаем шанс выплаты
-              win = bet * 2;
+          
+          const result = await placeBet('slots', bet, {});
+          if (result) {
+            slotReels.forEach((reel, i) => reel.textContent = result.reels[i]);
+            if (result.win > 0) {
+              let msg = `🎉 ВЫИГРЫШ ${result.win} КРЕДИТОВ! 🎉`;
+              if (result.jackpot) msg = `🦀🦀🦀 ДЖЕКПОТ! ${result.win} КРЕДИТОВ! 🦀🦀🦀`;
+              slotsResult.innerHTML = `<span class="win-glow">${msg}</span>`;
+            } else {
+              slotsResult.innerHTML = `<span class="lose-glow">😞 Не повезло... Ещё раз?</span>`;
             }
-          }
-          // Особый бонус: два краба + любой
-          if (!win && s.filter(x => x === '🦀').length === 2) {
-            if (Math.random() < 0.2) win = bet * 3;
-          }
-
-          if (win > 0) {
-            balance += win;
-            slotsResult.innerHTML = `<span class="win-glow">🎉 ВЫИГРЫШ ${win} КРЕДИТОВ! 🎉</span>`;
           } else {
-            slotsResult.innerHTML = `<span class="lose-glow">😞 Не повезло... Ещё раз?</span>`;
+            slotReels.forEach(reel => reel.textContent = '🦀');
           }
-          updateBalanceUI();
           spinBtn.disabled = false;
         }
       }, 80);
     });
 
-    // ---------- РУЛЕТКА (С АНИМАЦИЕЙ КОЛЕСА) ----------
+    // ---------- РУЛЕТКА ----------
     const rouletteNumberEl = document.getElementById('rouletteNumber');
     const rouletteColorBadge = document.getElementById('rouletteColorBadge');
     const wheelSpinner = document.getElementById('rouletteWheelSpinner');
@@ -665,73 +679,56 @@
     }
     renderChips();
 
-    const reds = [1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36];
-    function getRouletteColor(num) {
-      if (num === 0) return 'green';
-      return reds.includes(num) ? 'red' : 'black';
-    }
-
-    rouletteSpinBtn.addEventListener('click', function() {
+    rouletteSpinBtn.addEventListener('click', async function() {
       if (!selectedRouletteBet) {
         rouletteResult.innerHTML = '<span class="lose-glow">Сначала выберите ставку!</span>';
         return;
       }
       let bet = parseInt(rouletteBetInput.value);
       if (isNaN(bet) || bet < 1) bet = 10;
-      if (bet > balance) {
+      if (bet > currentBalance) {
         rouletteResult.innerHTML = '<span class="lose-glow">Недостаточно кредитов</span>';
         return;
       }
 
-      balance -= bet;
-      updateBalanceUI();
       rouletteSpinBtn.disabled = true;
-
-      // Сбрасываем предыдущий результат
       rouletteNumberEl.textContent = '?';
       rouletteColorBadge.style.backgroundColor = '#2b2b2b';
       wheelSpinner.classList.remove('spinning');
-      // Запускаем анимацию через рефлоу
       void wheelSpinner.offsetWidth;
       wheelSpinner.classList.add('spinning');
 
-      // Генерируем число и цвет заранее
-      const number = Math.floor(Math.random() * 37);
-      const color = getRouletteColor(number);
+      // Отправляем ставку
+      const extra = { bet_type: selectedRouletteBet.type };
+      if (selectedRouletteBet.value !== undefined) extra.bet_value = selectedRouletteBet.value;
 
-      // Через 2 секунды показываем результат
+      const result = await placeBet('roulette', bet, extra);
+      
       setTimeout(() => {
         wheelSpinner.classList.remove('spinning');
-        rouletteNumberEl.textContent = number;
-        const bgColor = color === 'red' ? '#c44b4b' : (color === 'black' ? '#2b2b2b' : '#2e7d32');
-        const shadowColor = color === 'red' ? '#ff4f4f' : (color === 'black' ? '#aaaaaa' : '#32cd32');
-        rouletteColorBadge.style.backgroundColor = bgColor;
-        rouletteColorBadge.style.boxShadow = `0 0 20px ${shadowColor}`;
+        if (result) {
+          const num = result.number;
+          const color = result.color;
+          rouletteNumberEl.textContent = num;
+          const bgColor = color === 'red' ? '#c44b4b' : (color === 'black' ? '#2b2b2b' : '#2e7d32');
+          const shadowColor = color === 'red' ? '#ff4f4f' : (color === 'black' ? '#aaaaaa' : '#32cd32');
+          rouletteColorBadge.style.backgroundColor = bgColor;
+          rouletteColorBadge.style.boxShadow = `0 0 20px ${shadowColor}`;
 
-        // Расчёт выигрыша
-        let win = 0;
-        const betType = selectedRouletteBet.type;
-        if (betType === 'straight' && number === selectedRouletteBet.value) win = bet * 35;
-        else if (betType === 'red' && color === 'red') win = bet * 2;
-        else if (betType === 'black' && color === 'black') win = bet * 2;
-        else if (betType === 'even' && number !== 0 && number % 2 === 0) win = bet * 2;
-        else if (betType === 'odd' && number % 2 === 1) win = bet * 2;
-        else if (betType === 'dozen1' && number >= 1 && number <= 12) win = bet * 3;
-        else if (betType === 'dozen2' && number >= 13 && number <= 24) win = bet * 3;
-        else if (betType === 'dozen3' && number >= 25 && number <= 36) win = bet * 3;
-
-        if (win > 0) {
-          balance += win;
-          rouletteResult.innerHTML = `<span class="win-glow">🎉 ВЫИГРЫШ ${win} КРЕДИТОВ! 🎉</span>`;
+          if (result.win > 0) {
+            rouletteResult.innerHTML = `<span class="win-glow">🎉 ВЫИГРЫШ ${result.win} КРЕДИТОВ! 🎉</span>`;
+          } else {
+            rouletteResult.innerHTML = `<span class="lose-glow">😞 Мимо! Выпало ${num}</span>`;
+          }
         } else {
-          rouletteResult.innerHTML = `<span class="lose-glow">😞 Мимо! Выпало ${number}</span>`;
+          rouletteNumberEl.textContent = '?';
+          rouletteResult.innerHTML = '<span class="lose-glow">Ошибка ставки</span>';
         }
-        updateBalanceUI();
         rouletteSpinBtn.disabled = false;
       }, 2000);
     });
 
-    // ---------- КОСТИ (ЧЁРНЫЙ ФОН) ----------
+    // ---------- КОСТИ ----------
     const dice1El = document.getElementById('dice1');
     const dice2El = document.getElementById('dice2');
     const diceSumsDiv = document.getElementById('diceSums');
@@ -755,25 +752,22 @@
       diceSumsDiv.appendChild(btn);
     }
 
-    rollDiceBtn.addEventListener('click', function() {
+    rollDiceBtn.addEventListener('click', async function() {
       if (!selectedSum) {
         diceResult.innerHTML = '<span class="lose-glow">Выберите сумму!</span>';
         return;
       }
       let bet = parseInt(diceBetInput.value);
       if (isNaN(bet) || bet < 1) bet = 10;
-      if (bet > balance) {
+      if (bet > currentBalance) {
         diceResult.innerHTML = '<span class="lose-glow">Недостаточно кредитов</span>';
         return;
       }
 
-      balance -= bet;
-      updateBalanceUI();
       rollDiceBtn.disabled = true;
 
-      // Анимация броска
       let rolls = 0;
-      const interval = setInterval(() => {
+      const interval = setInterval(async () => {
         const t1 = Math.floor(Math.random() * 6) + 1;
         const t2 = Math.floor(Math.random() * 6) + 1;
         dice1El.textContent = diceMap[t1];
@@ -781,28 +775,27 @@
         rolls++;
         if (rolls >= 10) {
           clearInterval(interval);
-          const d1 = Math.floor(Math.random() * 6) + 1;
-          const d2 = Math.floor(Math.random() * 6) + 1;
-          const sum = d1 + d2;
-          dice1El.textContent = diceMap[d1];
-          dice2El.textContent = diceMap[d2];
-
-          let win = 0;
-          if (sum === selectedSum) {
-            const odds = {2:36,12:36,3:18,11:18,4:12,10:12,5:9,9:9,6:7,8:7,7:6};
-            win = bet * (odds[sum] || 4);
-            balance += win;
-            diceResult.innerHTML = `<span class="win-glow">🎲 СУММА ${sum}! ВЫИГРЫШ ${win} КРЕДИТОВ!</span>`;
+          
+          const result = await placeBet('dice', bet, { sum: selectedSum });
+          if (result) {
+            dice1El.textContent = diceMap[result.dice1];
+            dice2El.textContent = diceMap[result.dice2];
+            if (result.win > 0) {
+              diceResult.innerHTML = `<span class="win-glow">🎲 СУММА ${result.sum}! ВЫИГРЫШ ${result.win} КРЕДИТОВ!</span>`;
+            } else {
+              diceResult.innerHTML = `<span class="lose-glow">😞 Выпало ${result.sum}. Проигрыш.</span>`;
+            }
           } else {
-            diceResult.innerHTML = `<span class="lose-glow">😞 Выпало ${sum}. Проигрыш.</span>`;
+            dice1El.textContent = '⚀';
+            dice2El.textContent = '⚀';
           }
-          updateBalanceUI();
           rollDiceBtn.disabled = false;
         }
       }, 80);
     });
 
-    updateBalanceUI();
+    // Запуск инициализации
+    initCasino();
   })();
 </script>
 </body>
